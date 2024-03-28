@@ -12,462 +12,420 @@ import java.awt.Graphics2D;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedList;
 
 import javax.swing.JPanel;
 import javax.swing.Timer;
 
-import jhealy.aicme4j.NetworkBuilder;
-import jhealy.aicme4j.NetworkBuilderFactory;
+import jhealy.aicme4j.net.Aicme4jUtils;
 import jhealy.aicme4j.net.NeuralNetwork;
 import jhealy.aicme4j.net.Output;
 
-public class GameView extends JPanel implements ActionListener {
-	// Some constants
-	private static final long serialVersionUID = 1L;
-	private static final int MODEL_WIDTH = 30;
-	private static final int MODEL_HEIGHT = 20;
-	private static final int SCALING_FACTOR = 30;
-
-	private static final int MIN_TOP = 2;
-	private static final int MIN_BOTTOM = 18;
-	private static final int PLAYER_COLUMN = 15;
-	private static final int TIMER_INTERVAL = 100;
-
-	private static final byte ONE_SET = 1;
-	private static final byte ZERO_SET = 0;
+public class GameView extends JPanel implements ActionListener{
+	//Some constants
+	private static final long serialVersionUID	= 1L;
+	private static final int MODEL_WIDTH 		= 30;
+	private static final int MODEL_HEIGHT 		= 20;
+	private static final int SCALING_FACTOR 	= 30;
+	
+	private static final int MIN_TOP 			= 2;
+	private static final int MIN_BOTTOM 		= 18;
+	private static final int PLAYER_COLUMN 		= 15;
+	private static final int TIMER_INTERVAL 	= 100;
+	
+	private static final byte ONE_SET 			=  1;
+	private static final byte ZERO_SET 			=  0;
+	private int[] safeSpots;
+	
+	public NeuralNetwork net;
 
 	/*
-	 * The 30x20 game grid is implemented using a linked list of 30 elements, where
-	 * each element contains a byte[] of size 20.
+	 * The 30x20 game grid is implemented using a linked list of 
+	 * 30 elements, where each element contains a byte[] of size 20. 
 	 */
 	private LinkedList<byte[]> model = new LinkedList<>();
 
-	// These two variables are used by the cavern generator.
+	//These two variables are used by the cavern generator. 
 	private int prevTop = MIN_TOP;
 	private int prevBot = MIN_BOTTOM;
-
-	// Once the timer stops, the game is over
+	
+	//Once the timer stops, the game is over
 	private Timer timer;
 	private long time;
-
+	
 	private int playerRow = 11;
-	private int index = MODEL_WIDTH - 1; // Start generating at the end
+	private int index = MODEL_WIDTH - 1; //Start generating at the end
 	private Dimension dim;
+	
+	//Some fonts for the UI display
+	private Font font = new Font ("Dialog", Font.BOLD, 50);
+	private Font over = new Font ("Dialog", Font.BOLD, 100);
 
-	// Some fonts for the UI display
-	private Font font = new Font("Dialog", Font.BOLD, 50);
-	private Font over = new Font("Dialog", Font.BOLD, 100);
-
-	// The player and a sprite for an exploding plane
+	//The player and a sprite for an exploding plane
 	private Sprite sprite;
 	private Sprite dyingSprite;
-
+	
 	private boolean auto;
-	private NeuralNetwork net;
 
-	public GameView(boolean auto) throws Exception {
-		this.auto = auto; // Use the autopilot
+	public GameView(boolean auto) throws Exception{
+		this.auto = auto; //Use the autopilot
 		setBackground(Color.LIGHT_GRAY);
 		setDoubleBuffered(true);
-		try (FileInputStream fileIn = new FileInputStream("./game_ai.data");
-				ObjectInputStream in = new ObjectInputStream(fileIn)) {
-			// Correctly cast the deserialized object to NeuralNetworkModel or the actual
-			// class name
-			net = (NeuralNetwork) in.readObject();
-		}
-
-		// Creates a viewing area of 900 x 600 pixels
+		
+		//Creates a viewing area of 900 x 600 pixels
 		dim = new Dimension(MODEL_WIDTH * SCALING_FACTOR, MODEL_HEIGHT * SCALING_FACTOR);
-		super.setPreferredSize(dim);
-		super.setMinimumSize(dim);
-		super.setMaximumSize(dim);
-
-		initModel();
-
-		timer = new Timer(TIMER_INTERVAL, this); // Timer calls actionPerformed() every second
+    	super.setPreferredSize(dim);
+    	super.setMinimumSize(dim);
+    	super.setMaximumSize(dim);
+		
+    	initModel();
+    	
+		timer = new Timer(TIMER_INTERVAL, this); //Timer calls actionPerformed() every second
 		timer.start();
-	}
-
-	// Build our game grid
+		
+		try {
+            String filename = "./game_ai.data"; // The path to your saved neural network
+            net = Aicme4jUtils.load(filename); // Assuming aicme4jutils.load() is a static method to load the network
+        } catch (Exception e) {
+            e.printStackTrace();
+            // Handle exceptions or errors as needed
+        }
+    }
+	
+	//Build our game grid
 	private void initModel() {
 		for (int i = 0; i < MODEL_WIDTH; i++) {
 			model.add(new byte[MODEL_HEIGHT]);
 		}
 	}
-
+	
 	public void setSprite(Sprite s) {
 		this.sprite = s;
 	}
-
+	
 	public void setDyingSprite(Sprite s) {
 		this.dyingSprite = s;
 	}
-
-	// Called every second by actionPerformed(). Paint methods are usually ugly.
+	
+	//Called every second by actionPerformed(). Paint methods are usually ugly.
 	public void paintComponent(Graphics g) {
-		super.paintComponent(g);
-		var g2 = (Graphics2D) g;
+        super.paintComponent(g);
+        var g2 = (Graphics2D)g;
+        
+        g2.setColor(Color.WHITE);
+        g2.fillRect(0, 0, dim.width, dim.height);
+        
+        int x1 = 0, y1 = 0;
+        for (int x = 0; x < MODEL_WIDTH; x++) {
+        	for (int y = 0; y < MODEL_HEIGHT; y++){  
+    			x1 = x * SCALING_FACTOR;
+        		y1 = y * SCALING_FACTOR;
 
-		g2.setColor(Color.WHITE);
-		g2.fillRect(0, 0, dim.width, dim.height);
-
-		int x1 = 0, y1 = 0;
-		for (int x = 0; x < MODEL_WIDTH; x++) {
-			for (int y = 0; y < MODEL_HEIGHT; y++) {
-				x1 = x * SCALING_FACTOR;
-				y1 = y * SCALING_FACTOR;
-
-				if (model.get(x)[y] != 0) {
-					if (y == playerRow && x == PLAYER_COLUMN) {
-						timer.stop(); // Crash...
-					}
-					g2.setColor(Color.BLACK);
-					g2.fillRect(x1, y1, SCALING_FACTOR, SCALING_FACTOR);
-				}
-
-				if (x == PLAYER_COLUMN && y == playerRow) {
-					if (timer.isRunning()) {
-						g2.drawImage(sprite.getNext(), x1, y1, null);
-					} else {
-						g2.drawImage(dyingSprite.getNext(), x1, y1, null);
-					}
-
-				}
-			}
-		}
-
-		/*
-		 * Not pretty, but good enough for this project... The compiler will tidy up and
-		 * optimise all of the arithmetics with constants below.
-		 */
-		g2.setFont(font);
-		g2.setColor(Color.RED);
-		g2.fillRect(1 * SCALING_FACTOR, 15 * SCALING_FACTOR, 400, 3 * SCALING_FACTOR);
-		g2.setColor(Color.WHITE);
-		g2.drawString("Time: " + (int) (time * (TIMER_INTERVAL / 1000.0d)) + "s", 1 * SCALING_FACTOR + 10,
-				(15 * SCALING_FACTOR) + (2 * SCALING_FACTOR));
-
-		if (!timer.isRunning()) {
+        		if (model.get(x)[y] != 0) {
+            		if (y == playerRow && x == PLAYER_COLUMN) {
+            			timer.stop(); //Crash...
+            		}
+            		g2.setColor(Color.BLACK);
+            		g2.fillRect(x1, y1, SCALING_FACTOR, SCALING_FACTOR);
+        		}
+        		
+        		if (x == PLAYER_COLUMN && y == playerRow) {
+        			if (timer.isRunning()) {
+            			g2.drawImage(sprite.getNext(), x1, y1, null);
+        			}else {
+            			g2.drawImage(dyingSprite.getNext(), x1, y1, null);
+        			}
+        			
+        		}
+        	}
+        }
+        
+        /*
+         * Not pretty, but good enough for this project... The compiler will
+         * tidy up and optimise all of the arithmetics with constants below.
+         */
+        g2.setFont(font);
+        g2.setColor(Color.RED);
+        g2.fillRect(1 * SCALING_FACTOR, 15 * SCALING_FACTOR, 400, 3 * SCALING_FACTOR);
+        g2.setColor(Color.WHITE);
+        g2.drawString("Time: " + (int)(time * (TIMER_INTERVAL/1000.0d)) + "s", 1 * SCALING_FACTOR + 10, (15 * SCALING_FACTOR) + (2 * SCALING_FACTOR));
+        
+        if (!timer.isRunning()) {
 			g2.setFont(over);
 			g2.setColor(Color.RED);
-			g2.drawString("Game Over!", MODEL_WIDTH / 5 * SCALING_FACTOR, MODEL_HEIGHT / 2 * SCALING_FACTOR);
-		}
+			g2.drawString("Game Over!", MODEL_WIDTH / 5 * SCALING_FACTOR, MODEL_HEIGHT / 2* SCALING_FACTOR);
+        }
 	}
 
-	// Move the plane up or down
+	//Move the plane up or down
 	public void move(int step) {
 		playerRow += step;
 	}
-
+	
+	
 	/*
-	 * ---------- AUTOPILOT! ---------- The following implementation randomly picks
-	 * a -1, 0, 1 to control the plane. You should plug the trained neural network
-	 * in here. This method is called by the timer every TIMER_INTERVAL units of
-	 * time from actionPerformed(). There are other ways of wiring your neural
-	 * network into the application, but this way might be the easiest.
-	 * 
+	 * ----------
+	 * AUTOPILOT!
+	 * ----------
+	 * The following implementation randomly picks a -1, 0, 1 to control the plane. You 
+	 * should plug the trained neural network in here. This method is called by the timer
+	 * every TIMER_INTERVAL units of time from actionPerformed(). There are other ways of
+	 * wiring your neural network into the application, but this way might be the easiest. 
+	 *  
 	 */
 	private void autoMove() throws Exception {
-		// Retrieve the current game state as input
-		double[] input = convertGameStateToInputFormat(model.toArray(new byte[MODEL_WIDTH][MODEL_HEIGHT]), playerRow);
-		// Get the action from the neural network
-		int action = getActionFromNN(input);
-		// Execute the action
-		executeAction(action);
-	}
+        double[] gameState = sample(); // Sampling the current game state
+        double networkOutput = net.process(gameState, Output.NUMERIC); // Getting the decision from the neural network
 
-	// This method interacts with the neural network to get the action
-	private int getActionFromNN(double[] input) throws Exception {
-		double output = net.process(input, Output.NUMERIC_ROUNDED);
-		return interpretOutput(output);
-	}
+        // Custom logic based on the game state and potentially the distances to obstacles
+        int action = determineExpectedAction(); // Deciding based on distances to obstacles
+        move(action);
+    }
 
-	// Converts the neural network output to a game action
-	private int interpretOutput(double output) {
-		// Logic to map the output to game actions (-1, 0, 1)
-		return (int) Math.round(output); // Example adjustment
-	}
-
-	// This method executes the action in the game environment
-	private void executeAction(int action) {
-		// Logic to move the plane based on the action
-		move(action);
-	}
-
-	// Helper method to interpret the network's output
-	private int interpretOutput1(double output) {
-		// Here, assuming output is a value that can directly map to -1, 0, 1
-		// You might need to adjust this logic based on how your network is structured
-		// and what kind of output it produces.
-		return (int) Math.round(output); // Example adjustment, tailor as needed
-	}
-
-	// Called every second by the timer
+	
+	//Called every second by the timer 
 	public void actionPerformed(ActionEvent e) {
-		time++; // Update our timer
-		this.repaint(); // Repaint the cavern
+        time++; // Update our timer
+        this.repaint(); // Repaint the cavern
 
-		// Update the next index to generate
-		index++;
-		index = (index == MODEL_WIDTH) ? 0 : index;
+        // Update the next index to generate
+        index++;
+        index = (index == MODEL_WIDTH) ? 0 : index;
 
-		generateNext(); // Generate the next part of the cave
-		if (auto)
-			try {
-				autoMove();
-			} catch (Exception e1) {
-				// TODO Auto-generated catch block
-				e1.printStackTrace();
-			}
+        generateNext(); // Generate the next part of the cave
+        if (auto && time > 20)
+            try {
+                autoMove();
+            } catch (Exception e1) {
+                e1.printStackTrace();
+            }
 
-		/*
-		 * Use something like the following to extract training data. It might be a good
-		 * idea to submit the double[] returned by the sample() method to an executor
-		 * and then write it out to file. You'll need to label the data too and perhaps
-		 * add some more features... Finally, you do not have to sample the data every
-		 * TIMER_INTERVAL units of time. Use some modular arithmetic as shown below.
-		 * Alternatively, add a key stroke to fire an event that starts the sampling.
-		 */
-		if (time % 10 == 0) {
-			double[] trainingRow = sample();
+        if (time % 10 == 0) {
+            double[] trainingRow = sample();
+            System.out.println("Sampled State: " + Arrays.toString(trainingRow));
 
-			// Convert the LinkedList to a 2D array for the determineExpectedAction method
-			byte[][] modelArray = model.toArray(new byte[MODEL_WIDTH][MODEL_HEIGHT]);
 
-			// Calculate the expected action based on the current game state and player
-			// position
-			int expectedAction = determineExpectedAction(modelArray, playerRow);
+            // Determine the expected action based on the current game state
+            int expectedAction = determineExpectedAction();
 
-			System.out.println(Arrays.toString(trainingRow) + "," + expectedAction);
-			writeDataToFile(modelArray, expectedAction, "game_state_data.csv", "expected_action_data.csv");
+            // Save the game state and the determined action to CSV files
+            writeDataToFile(trainingRow, expectedAction, "./game_state_data.csv", "./expected_action_data.csv");
+        }
+    }
 
-		}
-	}
+	private int determineExpectedAction() {
+	    // Indicates if there is a clear path ahead without needing to move up or down.
+	    boolean isPathClear = this.safeSpots[2] == MODEL_HEIGHT;
+	    int safeSpotsUp = this.safeSpots[1];
+	    int safeSpotsDown = this.safeSpots[2];
 
-	private int determineExpectedAction(byte[][] model, int playerRow) {
-		// Define the range of rows to check ahead of the player.
-		int lookAheadSteps = 3; // Number of columns to look ahead.
-		int bestAction = 0; // Default action is to stay in place.
-		int safeSpotsUp = 0;
-		int safeSpotsDown = 0;
+	    // Enhanced logging for better understanding of decision-making.
+	    System.out.println("Determining Expected Action:");
+	    System.out.println("Safe Spots Up: " + safeSpotsUp);
+	    System.out.println("Safe Spots Down: " + safeSpotsDown);
+	    System.out.println("Is Path Clear: " + isPathClear);
 
-		// Calculate safe spots by looking ahead a few steps.
-		for (int step = 1; step <= lookAheadSteps; step++) {
-			int columnIndex = (PLAYER_COLUMN + step) % MODEL_WIDTH; // Ensure we wrap around the model correctly.
+	    // Additional condition to prefer staying on course if safe spots are above a comfortable threshold.
+	    final int COMFORTABLE_THRESHOLD = 3;
 
-			// Check if moving up is safe.
-			if (playerRow - step >= 0 && model[columnIndex][playerRow - step] == ZERO_SET) {
-				safeSpotsUp++;
-			}
-
-			// Check if moving down is safe.
-			if (playerRow + step < MODEL_HEIGHT && model[columnIndex][playerRow + step] == ZERO_SET) {
-				safeSpotsDown++;
-			}
-		}
-
-		// Decide the best action based on the safe spots available.
-		if (safeSpotsUp > safeSpotsDown && playerRow > MIN_TOP) {
-			bestAction = -1; // Move up.
-		} else if (safeSpotsDown > safeSpotsUp && playerRow < MIN_BOTTOM - 1) {
-			bestAction = 1; // Move down.
-		}
-
-		return bestAction;
-	}
-
-	private double[] convertGameStateToInputFormat(byte[][] gameState, int playerRow) {
-	    final int HORIZON = 5; // Define the horizon (columns ahead of the player to consider)
-	    int horizonSize = HORIZON * MODEL_HEIGHT; // Calculate the number of elements in the horizon
-	    ArrayList<Double> inputVector = new ArrayList<>();
-
-	    // Include only the relevant part of the game state
-	    for (int x = 0; x < HORIZON; x++) {
-	        int columnIndex = (PLAYER_COLUMN + x + 1) % MODEL_WIDTH;
-	        for (int y = 0; y < MODEL_HEIGHT; y++) {
-	            inputVector.add((double) model.get(columnIndex)[y]);
-	        }
+	    if (isPathClear) {
+	        System.out.println("Action: Stay (Path is clear)");
+	        return 0;
 	    }
 
-	    // Add player's row as a feature (normalized)
-	    inputVector.add((double) playerRow / MODEL_HEIGHT);
+	    // Prioritize moving towards the direction with more safe spots,
+	    // but only if the difference is significant to warrant a move.
+	    final int SIGNIFICANT_DIFFERENCE = 2;
+	    if (safeSpotsUp - safeSpotsDown >= SIGNIFICANT_DIFFERENCE) {
+	        System.out.println("Action: Move Up (More space above)");
+	        return -1;
+	    } else if (safeSpotsDown - safeSpotsUp >= SIGNIFICANT_DIFFERENCE) {
+	        System.out.println("Action: Move Down (More space below)");
+	        return 1;
+	    }
 
-	    // Optionally add more features, such as distance to the nearest obstacle, etc.
-	    // For example: inputVector.add(calculateDistanceToClosestObstacle());
+	    // If moving is not significantly safer in either direction, prefer staying in place
+	    // unless the space in the current direction falls below a comfortable threshold.
+	    if (safeSpotsDown > COMFORTABLE_THRESHOLD || safeSpotsUp > COMFORTABLE_THRESHOLD) {
+	        System.out.println("Action: Stay (Comfortable in current position)");
+	        return 0;
+	    }
 
-	    // Convert ArrayList to array
-	    return inputVector.stream().mapToDouble(Double::doubleValue).toArray();
+	    // Default action to stay if conditions above do not trigger a move.
+	    System.out.println("Action: Stay (Default)");
+	    return 0;
 	}
 
 
+
+
+	private int calculateDistanceToObstacleAbove(int playerRow) {
+	    int distance = 0;
+	    // Loop upwards from the player's row to find the first obstacle
+	    for (int i = playerRow - 1; i >= 0; i--) {
+	        boolean obstacleFound = false;
+	        for (int j = 0; j < MODEL_WIDTH; j++) {
+	            if (model.get(j)[i] == ONE_SET) {
+	                obstacleFound = true;
+	                break;
+	            }
+	        }
+	        if (obstacleFound) {
+	            break;
+	        }
+	        distance++;
+	    }
+	    return distance;
+	}
+
+	private int calculateDistanceToObstacleBelow(int playerRow) {
+	    int distance = 0;
+	    // Loop downwards from the player's row to find the first obstacle
+	    for (int i = playerRow + 1; i < MODEL_HEIGHT; i++) {
+	        boolean obstacleFound = false;
+	        for (int j = 0; j < MODEL_WIDTH; j++) {
+	            if (model.get(j)[i] == ONE_SET) {
+	                obstacleFound = true;
+	                break;
+	            }
+	        }
+	        if (obstacleFound) {
+	            break;
+	        }
+	        distance++;
+	    }
+	    return distance;
+	}
+
+
+
+
+
+
+	
+	// Method to write game state and expected action data to files
+    private void writeDataToFile(double[] gameState, int action, String dataFilePath, String expectedFilePath) {
+        // Convert gameState to a comma-separated string
+        StringBuilder gameStateBuilder = new StringBuilder();
+        for (double d : gameState) {
+            gameStateBuilder.append(d).append(",");
+        }
+        String gameStateString = gameStateBuilder.toString();
+
+        // Write game state data to the specified file
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(dataFilePath, true))) { // true for append mode
+            bw.write(gameStateString); // Write gameStateString
+            bw.newLine(); // Add a new line after each row
+        } catch (IOException e) {
+            System.err.println("An error occurred while writing game state data to file: " + e.getMessage());
+        }
+
+        // Write expected action data to the specified file
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(expectedFilePath, true))) { // true for append mode
+            bw.write(action + ""); // Write the action
+            bw.newLine(); // Add a new line after each row
+        } catch (IOException e) {
+            System.err.println("An error occurred while writing expected action data to file: " + e.getMessage());
+        }
+    }
+	
+	
 	/*
-	 * Generate the next layer of the cavern. Use the linked list to move the
-	 * current head element to the tail and then randomly decide whether to increase
-	 * or decrease the cavern.
+	 * Generate the next layer of the cavern. Use the linked list to
+	 * move the current head element to the tail and then randomly
+	 * decide whether to increase or decrease the cavern. 
 	 */
 	private void generateNext() {
-		var next = model.pollFirst();
-		model.addLast(next); // Move the head to the tail
-		Arrays.fill(next, ONE_SET); // Fill everything in
-
-		// *** SET THIS TO SOMETHING HIGHER **** \\\
-		// Flip a coin to determine if we could grow or shrink the cave
-		var minspace = 4; // Smaller values will create a cave with smaller spaces
-		prevTop += current().nextBoolean() ? 1 : -1;
+		var next = model.pollFirst(); 
+		model.addLast(next); //Move the head to the tail
+		Arrays.fill(next, ONE_SET); //Fill everything in
+		
+		
+		//Flip a coin to determine if we could grow or shrink the cave
+		var minspace = 4; //Smaller values will create a cave with smaller spaces
+		prevTop += current().nextBoolean() ? 1 : -1; 
 		prevBot += current().nextBoolean() ? 1 : -1;
-		prevTop = max(MIN_TOP, min(prevTop, prevBot - minspace));
+		prevTop = max(MIN_TOP, min(prevTop, prevBot - minspace)); 		
 		prevBot = min(MIN_BOTTOM, max(prevBot, prevTop + minspace));
 
-		// Fill in the array with the carved area
+		//Fill in the array with the carved area
 		Arrays.fill(next, prevTop, prevBot, ZERO_SET);
 	}
-
+	
+	
+	
 	/*
-	 * Method to write training data to a file for training the neural network
+	 * Use this method to get a snapshot of the 30x20 matrix of values
+	 * that make up the game grid. The grid is flatmapped into a single
+	 * dimension double array... (somewhat) ready to be used by a neural 
+	 * net. You can experiment around with how much of this you actually
+	 * will need. The plane is always somehere in column PLAYER_COLUMN
+	 * and you probably do not need any of the columns behind this. You
+	 * can consider all of the columns ahead of PLAYER_COLUMN as your
+	 * horizon and this value can be reduced to save space and time if
+	 * needed, e.g. just look 1, 2 or 3 columns ahead. 
 	 * 
-	 * 
+	 * You may also want to track the last player movement, i.e.
+	 * up, down or no change. Depending on how you design your neural
+	 * network, you may also want to label the data as either okay or 
+	 * dead. Alternatively, the label might be the movement (up, down
+	 * or straight). 
+	 *  
 	 */
+    public double[] sample() {
+        var vector = new double[5]; // for two columns (top and bottom distances) and the player row position
+        int[] safeSpots = new int[4]; // for holding the counts of safe spots for the two columns
 
-	private void writeDataToFile(byte[][] modelArray, int expectedAction, String dataFilePath,
-			String expectedFilePath) {
-		// Convert modelArray to double[]
-		double[] data = new double[modelArray.length * modelArray[0].length];
-		int index = 0;
-		for (byte[] row : modelArray) {
-			for (byte value : row) {
-				data[index++] = value;
-			}
-		}
+        for (int j = 0; j < 2; j++) {
+            byte[] frontColumn = model.get((PLAYER_COLUMN + 1 + j) % MODEL_WIDTH);
+            int top = 0;
+            int bott = 0;
 
-		// Convert data to strings
-		StringBuilder dataBuilder = new StringBuilder();
-		for (double d : data) {
-			dataBuilder.append(d).append(",");
-		}
-		String dataString = dataBuilder.toString();
-
-		// Write game state data to the specified file
-		try (BufferedWriter bw = new BufferedWriter(new FileWriter(dataFilePath, true))) { // true for append mode
-			bw.write(dataString); // Write dataString
-			bw.newLine(); // Add a new line after each row
-		} catch (IOException e) {
-			System.err.println("An error occurred while writing game state data to file: " + e.getMessage());
-		}
-
-		// Write expected action data to the specified file
-		try (BufferedWriter bw = new BufferedWriter(new FileWriter(expectedFilePath, true))) { // true for append mode
-			bw.write(expectedAction + ""); // Write the expected action
-			bw.newLine(); // Add a new line after each row
-		} catch (IOException e) {
-			System.err.println("An error occurred while writing expected action data to file: " + e.getMessage());
-		}
-	}
-
-	/*
-	 * Use this method to get a snapshot of the 30x20 matrix of values that make up
-	 * the game grid. The grid is flatmapped into a single dimension double array...
-	 * (somewhat) ready to be used by a neural net. You can experiment around with
-	 * how much of this you actually will need. The plane is always somehere in
-	 * column PLAYER_COLUMN and you probably do not need any of the columns behind
-	 * this. You can consider all of the columns ahead of PLAYER_COLUMN as your
-	 * horizon and this value can be reduced to save space and time if needed, e.g.
-	 * just look 1, 2 or 3 columns ahead.
-	 * 
-	 * You may also want to track the last player movement, i.e. up, down or no
-	 * change. Depending on how you design your neural network, you may also want to
-	 * label the data as either okay or dead. Alternatively, the label might be the
-	 * movement (up, down or straight).
-	 * 
-	 */
-	// update this
-	public double[] sample() {
-        final int HORIZON = 5; // Look ahead a few steps to capture upcoming obstacles
-        ArrayList<Double> features = new ArrayList<>();
-
-        // Capture the state of the game grid within the horizon
-        for (int x = 0; x < HORIZON; x++) {
-            int columnIndex = (PLAYER_COLUMN + x + 1) % MODEL_WIDTH; // Wrap around if needed
-            for (int y = 0; y < MODEL_HEIGHT; y++) {
-                features.add((double) model.get(columnIndex)[y]);
+            for (int i = 0; i < MODEL_HEIGHT; i++) {
+                if (frontColumn[i] == ONE_SET) {
+                    top++;
+                } else {
+                    break; // Exiting loop when first empty spot is found
+                }
             }
+            
+            for (int i = MODEL_HEIGHT - 1; i >= 0; i--) {
+                if (frontColumn[i] == ONE_SET) {
+                    bott++;
+                } else {
+                    break; // Exiting loop when first empty spot from bottom is found
+                }
+            }
+
+            // Normalize the counts by dividing by MODEL_HEIGHT
+            vector[j * 2] = (MODEL_HEIGHT - top) / (double) MODEL_HEIGHT;
+            vector[j * 2 + 1] = (MODEL_HEIGHT - bott) / (double) MODEL_HEIGHT;
+
+            // Correct calculation for safe spots based on empty spots found
+            safeSpots[j * 2] = MODEL_HEIGHT - top - bott; // Correctly account for safe spots at the top
+            safeSpots[j * 2 + 1] = safeSpots[j * 2]; // Assuming symmetric safe spots for simplicity
         }
 
-        // Distance to the closest obstacle directly in front of the player
-        features.add(calculateDistanceToClosestObstacle());
+        vector[4] = playerRow / (double) MODEL_HEIGHT; // Normalizing player row position
+        this.safeSpots = safeSpots; // Updating the class variable
 
-        // Vertical proximity to obstacles above and below the player
-        features.add(calculateProximityAbove());
-        features.add(calculateProximityBelow());
-
-        // Normalize the player's row position and add it as a feature
-        features.add((double) playerRow / MODEL_HEIGHT);
-
-        // Convert the ArrayList to a primitive array for processing
-        double[] featureArray = new double[features.size()];
-        for (int i = 0; i < featureArray.length; i++) {
-            featureArray[i] = features.get(i);
-        }
-
-        return featureArray;
+        return vector;
     }
 
-    // Calculates the normalized distance to the closest obstacle above the player
-    private double calculateProximityAbove() {
-        int distance = 0; // Start counting distance from the player's position
-        for (int y = playerRow - 1; y >= 0; y--) { // Loop upwards from the player's position
-            if (model.get(PLAYER_COLUMN)[y] == ONE_SET) {
-                break; // Obstacle found
-            }
-            distance++;
-        }
-        // Normalize the distance by the height of the model
-        return (double) distance / MODEL_HEIGHT;
-    }
 
-    // Calculates the normalized distance to the closest obstacle below the player
-    private double calculateProximityBelow() {
-        int distance = 0; // Start counting distance from the player's position
-        for (int y = playerRow + 1; y < MODEL_HEIGHT; y++) { // Loop downwards from the player's position
-            if (model.get(PLAYER_COLUMN)[y] == ONE_SET) {
-                break; // Obstacle found
-            }
-            distance++;
-        }
-        // Normalize the distance by the height of the model
-        return (double) distance / MODEL_HEIGHT;
-    }
-
-	// This method calculates the distance to the closest obstacle directly in the player's path
-	private double calculateDistanceToClosestObstacle() {
-	    double distance = MODEL_WIDTH; // Start with the max possible distance
-	    // Loop through the columns in front of the player to find the closest obstacle
-	    for (int x = PLAYER_COLUMN + 1; x < MODEL_WIDTH; x++) {
-	        if (model.get(x % MODEL_WIDTH)[playerRow] == ONE_SET) {
-	            distance = Math.min(distance, x - PLAYER_COLUMN);
-	            break; // Stop at the first obstacle found
-	        }
-	    }
-	    // Normalize the distance by the width of the model for consistency
-	    return distance / MODEL_WIDTH;
-	}
-
-
+	
+	
 	/*
 	 * Resets and restarts the game when the "S" key is pressed
 	 */
 	public void reset() {
-		model.stream() // Zero out the grid
-				.forEach(n -> Arrays.fill(n, 0, n.length, ZERO_SET));
-		playerRow = 11; // Centre the plane
-		time = 0; // Reset the clock
-		timer.restart(); // Start the animation
+		model.stream() 		//Zero out the grid
+		     .forEach(n -> Arrays.fill(n, 0, n.length, ZERO_SET));
+		playerRow = 11;		//Centre the plane
+		time = 0; 			//Reset the clock
+		timer.restart();	//Start the animation
 	}
 }
