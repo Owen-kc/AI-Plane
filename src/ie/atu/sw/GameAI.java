@@ -17,11 +17,7 @@ public class GameAI {
         double[][] data = loadCSV(dataFilePath);
         double[][] expected = transformExpectedOutput(loadCSV(expectedFilePath));
 
-        // Assuming 5 inputs as per your game state vector
-        int inputSize = 5;
-        
-        // Assuming a single output for simplicity, but you can adjust as needed
-        int outputSize = 1; // Adjust if using one-hot encoded output
+        int inputSize = 6;
 
         var net = NetworkBuilderFactory.getInstance().newNetworkBuilder()
                 .inputLayer("Input", inputSize)
